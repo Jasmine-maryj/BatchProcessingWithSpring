@@ -7,10 +7,12 @@ public class GasProcessor implements ItemProcessor<Gas, Gas> {
 
     @Override
     public Gas process(Gas gas) throws Exception {
-        if(gas.getStatus().equals("Good")) {
-            return gas;
-        }else{
-            return null;
-        }
+//        if(gas.getStatus().equals("Good")) {
+//            return gas;
+//        }else{
+//            return null;
+//        }
+
+        return gas;
     }
 }

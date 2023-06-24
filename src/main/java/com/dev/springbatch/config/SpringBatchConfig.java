@@ -1,6 +1,7 @@
 package com.dev.springbatch.config;
 
 import com.dev.springbatch.entity.Gas;
+import com.dev.springbatch.partition.DataPartition;
 import com.dev.springbatch.repository.GasRepository;
 import lombok.AllArgsConstructor;
 import org.springframework.batch.core.Job;
@@ -8,6 +9,8 @@ import org.springframework.batch.core.Step;
 import org.springframework.batch.core.configuration.annotation.EnableBatchProcessing;
 import org.springframework.batch.core.configuration.annotation.JobBuilderFactory;
 import org.springframework.batch.core.configuration.annotation.StepBuilderFactory;
+import org.springframework.batch.core.partition.PartitionHandler;
+import org.springframework.batch.core.partition.support.TaskExecutorPartitionHandler;
 import org.springframework.batch.item.data.RepositoryItemWriter;
 import org.springframework.batch.item.file.FlatFileItemReader;
 import org.springframework.batch.item.file.LineMapper;
@@ -19,6 +22,7 @@ import org.springframework.context.annotation.Configuration;
 import org.springframework.core.io.FileSystemResource;
 import org.springframework.core.task.SimpleAsyncTaskExecutor;
 import org.springframework.core.task.TaskExecutor;
+import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
 
 @Configuration
 @EnableBatchProcessing
@@ -30,6 +34,8 @@ public class SpringBatchConfig {
     private StepBuilderFactory stepBuilderFactory;
 
     private GasRepository gasRepository;
+
+    private GasWriter gasWriter;
 
     @Bean
     public FlatFileItemReader<Gas> reader(){
@@ -65,12 +71,28 @@ public class SpringBatchConfig {
     }
 
     //writer
+//    @Bean
+//    public RepositoryItemWriter<Gas> repositoryItemWriter(){
+//        RepositoryItemWriter<Gas> writer = new RepositoryItemWriter<>();
+//        writer.setRepository(gasRepository);
+//        writer.setMethodName("save");
+//        return writer;
+//    }
+
+
+
     @Bean
-    public RepositoryItemWriter<Gas> repositoryItemWriter(){
-        RepositoryItemWriter<Gas> writer = new RepositoryItemWriter<>();
-        writer.setRepository(gasRepository);
-        writer.setMethodName("save");
-        return writer;
+    public DataPartition partition(){
+        return new DataPartition();
+    }
+
+    @Bean
+    public PartitionHandler partitionHandler(){
+        TaskExecutorPartitionHandler taskExecutorPartitionHandler = new TaskExecutorPartitionHandler();
+        taskExecutorPartitionHandler.setGridSize(4);
+        taskExecutorPartitionHandler.setTaskExecutor(taskExecutor());
+        taskExecutorPartitionHandler.setStep(step1());
+        return taskExecutorPartitionHandler;
     }
 
     //create a step and give all the components(w, p, r) to it.
@@ -80,23 +102,35 @@ public class SpringBatchConfig {
                 .<Gas, Gas>chunk(10)
                 .reader(reader())
                 .processor(gasProcessor())
-                .writer(repositoryItemWriter())
-                .taskExecutor(taskExecutor())
+                .writer(gasWriter)
+                .build();
+    }
+
+    @Bean
+    public Step stepMaster(){
+        return stepBuilderFactory.get("master-step")
+                .partitioner(step1().getName(), partition())
+                .partitionHandler(partitionHandler())
                 .build();
     }
 
     @Bean
     public Job job(){
         return jobBuilderFactory.get("importGases")
-                .flow(step1())
+                .flow(stepMaster())
                 .end().build();
     }
 
     @Bean
     public TaskExecutor taskExecutor(){
-        SimpleAsyncTaskExecutor asyncTaskExecutor = new SimpleAsyncTaskExecutor();
-        asyncTaskExecutor.setConcurrencyLimit(10);
-        return asyncTaskExecutor;
+//        SimpleAsyncTaskExecutor asyncTaskExecutor = new SimpleAsyncTaskExecutor();
+//        asyncTaskExecutor.setConcurrencyLimit(10);
+//        return asyncTaskExecutor;
+        ThreadPoolTaskExecutor taskExecutor = new ThreadPoolTaskExecutor();
+        taskExecutor.setMaxPoolSize(4);
+        taskExecutor.setCorePoolSize(4);
+        taskExecutor.setQueueCapacity(4);
+        return taskExecutor;
     }
 
 }
